@@ -330,9 +330,9 @@ cc-launcher 与 cc-status 设计为完美配合的两个组件：
 
 ## 🔗 相关项目
 
-- **[cc-status](../cc-status/)** - Claude Code 多平台状态栏管理器
-- **[gaccode.com](../gaccode.com/)** - 原始项目（已分拆）
+- **[cc-status](https://github.com/DrayChou/cc-status)** - Claude Code 多平台状态栏管理器
+- **[gaccode.com](https://github.com/DrayChou/gaccode-statusline)** - 原始项目（已分拆）
 
 ---
 
-> **💡 提示**: cc-launcher 专注于提供最佳的启动体验，配合使用 [cc-status](../cc-status/) 可获得完整的多平台Claude Code解决方案。
+> **💡 提示**: cc-launcher 专注于提供最佳的启动体验，配合使用 [cc-status](https://github.com/DrayChou/cc-status) 可获得完整的多平台Claude Code解决方案。
