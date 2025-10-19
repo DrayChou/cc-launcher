@@ -152,6 +152,11 @@ Examples:
         action="store_true",
         help="Enable debug logging"
     )
+    parser.add_argument(
+        "--init-config",
+        action="store_true",
+        help="Initialize configuration files"
+    )
 
     args = parser.parse_args()
 
@@ -172,6 +177,20 @@ Examples:
 
     try:
         # 处理特殊命令
+        if args.init_config:
+            print_header()
+            try:
+                # 触发配置文件创建（通过读取配置）
+                config_manager.get_platforms_config()
+                config_manager.get_status_config()
+                config_manager.get_launcher_config()
+                printer.print("Configuration files initialized successfully", Colors.GREEN)
+                printer.print(f"Configuration location: {config_manager.config_dir}", Colors.CYAN)
+            except Exception as e:
+                printer.print(f"Failed to initialize configuration: {e}", Colors.RED)
+                return 1
+            return 0
+
         if args.list:
             print_header()
             list_available_platforms(config_manager)
