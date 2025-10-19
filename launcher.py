@@ -14,6 +14,7 @@ Claude Code 多平台启动器主入口
 import sys
 import argparse
 from pathlib import Path
+from typing import Optional
 
 # 添加项目路径到 Python 路径
 script_dir = Path(__file__).parent
@@ -265,24 +266,50 @@ Examples:
         # 启动Claude Code进程
         import os
         import subprocess
+        import shutil
+        import json
 
         # 使用配置好的环境变量
         launch_env = os.environ.copy()
         launch_env.update(env_vars)
 
+        # 获取命令的完整路径（重要：避免PATH问题）
+        cmd_path = shutil.which(launch_cmd[0])
+        if cmd_path:
+            launch_cmd[0] = cmd_path
+            printer.print(f"Using full path: {cmd_path}", Colors.GREEN)
+
+        # 关键修复：临时修改settings.json文件（模仿原始gaccode.com）
+        settings_backup_path = None
         try:
-            process = subprocess.run(
-                launch_cmd,
-                env=launch_env,
-                check=False
-            )
-            return process.returncode
-        except KeyboardInterrupt:
-            printer.print("\nInterrupted by user", Colors.YELLOW)
-            return 130
-        except FileNotFoundError:
-            printer.print(f"Command not found: {launch_cmd[0]}", Colors.RED)
-            return 1
+            settings_backup_path = _modify_settings_json_temporarily(platform_config, printer)
+        except Exception as e:
+            printer.print(f"Warning: Failed to modify settings.json: {e}", Colors.YELLOW)
+
+        try:
+            try:
+                process = subprocess.run(
+                    launch_cmd,
+                    env=launch_env,
+                    check=False,
+                    shell=(os.name == "nt")  # Windows需要shell=True
+                )
+                return process.returncode
+            except KeyboardInterrupt:
+                printer.print("\nInterrupted by user", Colors.YELLOW)
+                return 130
+            except FileNotFoundError:
+                printer.print(f"Command not found: {launch_cmd[0]}", Colors.RED)
+                return 1
+        finally:
+            # 恢复原始settings.json
+            if settings_backup_path and settings_backup_path.exists():
+                try:
+                    user_settings_path = Path.home() / ".claude" / "settings.json"
+                    shutil.move(settings_backup_path, user_settings_path)
+                    printer.print("Settings.json restored", Colors.GREEN)
+                except Exception as e:
+                    printer.print(f"Warning: Failed to restore settings.json: {e}", Colors.YELLOW)
 
     except KeyboardInterrupt:
         printer.print("\nInterrupted by user", Colors.YELLOW)
@@ -291,6 +318,94 @@ Examples:
         logger.error(f"Unexpected error: {e}")
         printer.print(f"Unexpected error: {e}", Colors.RED)
         return 1
+
+
+def _modify_settings_json_temporarily(platform_config: dict, printer) -> Optional[Path]:
+    """临时修改settings.json文件，确保Claude Code读取正确的配置
+
+    Args:
+        platform_config: 平台配置
+        printer: 颜色打印机
+
+    Returns:
+        备份文件路径，如果settings.json不存在则返回None
+    """
+    import shutil
+    import json
+
+    user_settings_path = Path.home() / ".claude" / "settings.json"
+    backup_settings_path = Path.home() / ".claude" / "settings.json.backup"
+
+    if not user_settings_path.exists():
+        return None
+
+    try:
+        # 备份原始settings.json
+        shutil.copy2(user_settings_path, backup_settings_path)
+        printer.print("Backed up settings.json to settings.json.backup", Colors.GRAY)
+
+        # 读取并修改settings.json
+        with open(user_settings_path, "r", encoding="utf-8") as f:
+            settings_data = json.load(f)
+
+        # 保存原始env配置用于调试
+        original_env = settings_data.get("env", {})
+        printer.print(f"Original env in settings.json: {list(original_env.keys())}", Colors.CYAN)
+
+        # 创建新的环境变量配置
+        env_config = _create_settings_env_config(platform_config)
+
+        # 设置正确的环境变量配置
+        settings_data["env"] = env_config
+
+        # 写入修改后的settings.json
+        with open(user_settings_path, "w", encoding="utf-8") as f:
+            json.dump(settings_data, f, indent=2, ensure_ascii=False)
+
+        printer.print("Updated env configuration in settings.json", Colors.GREEN)
+        return backup_settings_path
+    except Exception as e:
+        printer.print(f"Warning: Failed to modify settings.json: {e}", Colors.RED)
+        return None
+
+
+def _create_settings_env_config(platform_config: dict) -> dict:
+    """为settings.json创建环境变量配置
+
+    Args:
+        platform_config: 平台配置
+
+    Returns:
+        环境变量配置字典
+    """
+    env_config = {}
+
+    # 设置认证信息
+    if platform_config.get("api_key"):
+        env_config.update({
+            "ANTHROPIC_API_KEY": platform_config["api_key"],
+            "ANTHROPIC_AUTH_TOKEN": ""
+        })
+    elif platform_config.get("auth_token"):
+        env_config.update({
+            "ANTHROPIC_AUTH_TOKEN": platform_config["auth_token"],
+            "ANTHROPIC_API_KEY": ""
+        })
+
+    # 设置API基础URL
+    if platform_config.get("api_base_url"):
+        env_config["ANTHROPIC_BASE_URL"] = platform_config["api_base_url"]
+
+    # 设置模型配置 - 重要！确保模型切换生效
+    model = platform_config.get("model", "")
+    if model:
+        env_config["ANTHROPIC_MODEL"] = model
+        env_config["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = model
+        env_config["ANTHROPIC_DEFAULT_SONNET_MODEL"] = model
+        env_config["ANTHROPIC_DEFAULT_OPUS_MODEL"] = model
+        env_config["ANTHROPIC_SMALL_FAST_MODEL"] = platform_config.get("small_model", model)
+
+    return env_config
 
 
 if __name__ == "__main__":

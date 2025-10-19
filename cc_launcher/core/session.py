@@ -14,6 +14,7 @@ from datetime import datetime
 
 from ..utils.logger import get_logger
 from ..utils.file_lock import safe_json_read, safe_json_write
+from .session_mapper import get_session_mapper
 
 
 class SessionManager:
@@ -36,7 +37,10 @@ class SessionManager:
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
         self.logger = get_logger("session")
 
-        # session映射文件
+        # 获取增强的会话映射器
+        self.session_mapper = get_session_mapper()
+
+        # session映射文件（向后兼容）
         self.session_mappings_file = self.cache_dir / "session-mappings.json"
 
     def create_or_get_session(self, platform_name: str, continue_session: bool = False) -> Optional[Dict[str, Any]]:
@@ -71,6 +75,38 @@ class SessionManager:
     def _create_new_session(self, platform_name: str) -> Optional[Dict[str, Any]]:
         """创建新会话"""
         try:
+            # 使用增强的会话映射器生成双UUID
+            uuid_mapping = self.session_mapper.generate_dual_uuids(platform_name)
+
+            if uuid_mapping:
+                # 构建会话信息
+                session_info = {
+                    "session_id": uuid_mapping["session_id"],  # 使用前缀UUID作为会话ID
+                    "standard_uuid": uuid_mapping["standard_uuid"],
+                    "prefix_uuid": uuid_mapping["prefix_uuid"],
+                    "platform": platform_name,
+                    "created_at": datetime.now().isoformat(),
+                    "created_timestamp": time.time(),
+                    "last_active": time.time()
+                }
+
+                # 更新最后使用的会话（向后兼容）
+                self._update_last_session(platform_name, session_info)
+
+                self.logger.info(f"Enhanced session created for {platform_name}: {uuid_mapping['prefix_uuid']} <-> {uuid_mapping['standard_uuid']}")
+                return session_info
+            else:
+                # 降级到原始实现
+                return self._fallback_create_session(platform_name)
+
+        except Exception as e:
+            self.logger.error(f"Error creating new session with enhanced mapper: {e}")
+            # 降级到原始实现
+            return self._fallback_create_session(platform_name)
+
+    def _fallback_create_session(self, platform_name: str) -> Optional[Dict[str, Any]]:
+        """降级会话创建方法"""
+        try:
             # 生成标准UUID
             base_uuid = str(uuid.uuid4())
 
@@ -90,17 +126,18 @@ class SessionManager:
                 "last_active": time.time()
             }
 
-            # 保存会话映射
+            # 保存会话映射（向后兼容）
             self._save_session_mapping(prefixed_uuid, session_info)
             self._save_session_mapping(base_uuid, session_info)
 
             # 更新最后使用的会话
             self._update_last_session(platform_name, session_info)
 
+            self.logger.info(f"Fallback session created for {platform_name}: {prefixed_uuid}")
             return session_info
 
         except Exception as e:
-            self.logger.error(f"Error creating new session: {e}")
+            self.logger.error(f"Error creating fallback session: {e}")
             return None
 
     def get_last_session(self, platform_name: str) -> Optional[Dict[str, Any]]:
