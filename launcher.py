@@ -39,6 +39,14 @@ def print_header():
     printer = ColorPrinter()
     printer.print("Claude Code Multi-Platform Launcher v1.0", Colors.MAGENTA, bold=True)
     printer.print("=" * 50, Colors.GRAY)
+
+    # 显示 launcher.py 的实际安装路径（仅在非标准位置时显示）
+    launcher_path = Path(__file__).parent
+    standard_path = Path.home() / ".claude" / "scripts" / "cc-launcher"
+
+    if launcher_path != standard_path:
+        printer.print(f"Launcher location: {launcher_path}", Colors.GRAY)
+
     print()
 
 
@@ -111,6 +119,99 @@ def check_config(config_manager: ConfigManager):
     print()
 
 
+def check_claude_updates(claude_detector: ClaudeDetector, printer: ColorPrinter):
+    """检查Claude Code更新"""
+    import subprocess
+    import os
+
+    printer.print("Claude Code Update Check:", Colors.CYAN, bold=True)
+
+    # 检测当前安装的Claude Code
+    claude_cmd = claude_detector.detect_claude_command()
+    if not claude_cmd:
+        printer.print("[FAIL] Claude Code not found", Colors.RED)
+        suggestions = claude_detector.suggest_installation_methods()
+        printer.print("Installation suggestions:", Colors.YELLOW)
+        for suggestion in suggestions:
+            printer.print(f"  * {suggestion}", Colors.GRAY)
+        return
+
+    # 获取当前版本
+    current_version = claude_detector.get_claude_version(claude_cmd)
+    if current_version:
+        printer.print(f"[OK] Current version: {current_version}", Colors.GREEN)
+    else:
+        printer.print("[WARN] Could not determine current version", Colors.YELLOW)
+
+    # 检查更新 (仅对npm全局安装有效)
+    if claude_cmd[0] == "claude":
+        printer.print("Checking for updates via npm...", Colors.CYAN)
+        try:
+            # 检查是否有更新
+            result = subprocess.run(
+                ["npm", "outdated", "-g", "@anthropic-ai/claude-code"],
+                capture_output=True,
+                text=True,
+                timeout=15
+            )
+
+            if result.returncode == 0:
+                # 没有输出表示没有更新
+                printer.print("[OK] Claude Code is up to date", Colors.GREEN)
+            elif "missing" in result.stdout or result.returncode != 0:
+                printer.print("[INFO] Update check completed", Colors.CYAN)
+                if result.stdout.strip():
+                    printer.print("Update info:", Colors.GRAY)
+                    for line in result.stdout.strip().split('\n'):
+                        if line.strip():
+                            printer.print(f"  {line}", Colors.GRAY)
+            else:
+                printer.print("[INFO] Checking for latest version...", Colors.CYAN)
+                # 尝试获取最新版本信息
+                try:
+                    latest_result = subprocess.run(
+                        ["npm", "view", "@anthropic-ai/claude-code", "version"],
+                        capture_output=True,
+                        text=True,
+                        timeout=10
+                    )
+                    if latest_result.returncode == 0:
+                        latest_version = latest_result.stdout.strip()
+                        printer.print(f"Latest version: {latest_version}", Colors.CYAN)
+
+                        if current_version and latest_version != current_version:
+                            printer.print("[UPDATE] Update available!", Colors.YELLOW)
+                            printer.print("To update: npm update -g @anthropic-ai/claude-code", Colors.GREEN)
+                        else:
+                            printer.print("[OK] You have the latest version", Colors.GREEN)
+                    else:
+                        printer.print("[WARN] Could not fetch latest version info", Colors.YELLOW)
+                except Exception as e:
+                    printer.print(f"[WARN] Error checking latest version: {e}", Colors.YELLOW)
+
+        except subprocess.TimeoutExpired:
+            printer.print("[WARN] Update check timed out", Colors.YELLOW)
+        except FileNotFoundError:
+            printer.print("[WARN] npm not found, cannot check for updates", Colors.YELLOW)
+            printer.print("Install npm: https://www.npmjs.com/get-npm", Colors.CYAN)
+        except Exception as e:
+            printer.print(f"[WARN] Error checking for updates: {e}", Colors.YELLOW)
+
+    else:
+        # 非npm安装的Claude Code
+        printer.print("[INFO] Update checking is only available for npm-installed Claude Code", Colors.YELLOW)
+        printer.print("Current installation method:", Colors.GRAY)
+        printer.print(f"  {' '.join(claude_cmd)}", Colors.GRAY)
+
+    # 提供手动更新建议
+    printer.print("\nManual update options:", Colors.CYAN)
+    printer.print("  * npm update -g @anthropic-ai/claude-code", Colors.GRAY)
+    printer.print("  * npm install -g @anthropic-ai/claude-code@latest", Colors.GRAY)
+    printer.print("  * Download from: https://claude.ai/download", Colors.GRAY)
+
+    print()
+
+
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(
@@ -158,6 +259,11 @@ Examples:
         action="store_true",
         help="Initialize configuration files"
     )
+    parser.add_argument(
+        "--check-updates",
+        action="store_true",
+        help="Check for Claude Code updates"
+    )
 
     args = parser.parse_args()
 
@@ -200,6 +306,11 @@ Examples:
         if args.check_config:
             print_header()
             check_config(config_manager)
+            return 0
+
+        if args.check_updates:
+            print_header()
+            check_claude_updates(claude_detector, printer)
             return 0
 
         # 正常启动流程
