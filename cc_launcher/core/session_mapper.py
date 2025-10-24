@@ -27,18 +27,30 @@ class SessionMapper:
         # 会话映射文件
         self.session_mappings_file = self.cache_dir / "session-mappings.json"
 
-        # 平台前缀配置 - 按照原始gaccode.com的数字序号规则
-        self.platform_prefixes = {
-            "gaccode": "01",
-            "deepseek": "02",
-            "kimi": "03",
-            "glm": "04",
-            "siliconflow": "05",
-            "vanchin": "06"
-        }
+        # 动态生成平台前缀配置
+        self.platform_prefixes = self._generate_platform_prefixes()
 
         # 加载现有映射
         self.mappings = self._load_mappings()
+
+    def _generate_platform_prefixes(self) -> Dict[str, str]:
+        """动态生成平台前缀映射"""
+        # 读取平台配置文件
+        from ..core.config import ConfigManager
+        config_manager = ConfigManager()
+        platforms_config = config_manager.get_platforms_config()
+        platforms = platforms_config.get("platforms", {})
+
+        # 按照平台名称排序并生成数字前缀
+        sorted_platforms = sorted(platforms.keys())
+        platform_prefixes = {}
+
+        for index, platform_name in enumerate(sorted_platforms, 1):
+            prefix = f"{index:02d}"  # 格式化为两位数字，如 "01", "02", etc.
+            platform_prefixes[platform_name] = prefix
+
+        self.logger.debug(f"Generated platform prefixes: {platform_prefixes}")
+        return platform_prefixes
 
     def _load_mappings(self) -> Dict[str, Any]:
         """加载会话映射"""

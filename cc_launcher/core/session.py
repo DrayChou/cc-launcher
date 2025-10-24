@@ -20,15 +20,23 @@ from .session_mapper import get_session_mapper
 class SessionManager:
     """会话管理器"""
 
-    # 平台前缀映射
-    PLATFORM_PREFIXES = {
-        "gaccode": "01",
-        "deepseek": "02",
-        "kimi": "03",
-        "siliconflow": "04",
-        "local_proxy": "05",
-        "vanchin": "06",
-    }
+    # 动态生成平台前缀映射
+    @property
+    def platform_prefixes(self) -> Dict[str, str]:
+        """动态生成平台前缀映射"""
+        platforms_config = self.config_manager.get_platforms_config()
+        platforms = platforms_config.get("platforms", {})
+
+        # 按照平台名称排序并生成数字前缀
+        sorted_platforms = sorted(platforms.keys())
+        platform_prefixes = {}
+
+        for index, platform_name in enumerate(sorted_platforms, 1):
+            prefix = f"{index:02d}"  # 格式化为两位数字，如 "01", "02", etc.
+            platform_prefixes[platform_name] = prefix
+
+        self.logger.debug(f"Generated platform prefixes: {platform_prefixes}")
+        return platform_prefixes
 
     def __init__(self, config_manager):
         """初始化会话管理器"""
@@ -112,7 +120,7 @@ class SessionManager:
             base_uuid = str(uuid.uuid4())
 
             # 获取平台前缀
-            platform_prefix = self.PLATFORM_PREFIXES.get(platform_name, "01")
+            platform_prefix = self.platform_prefixes.get(platform_name, "01")
 
             # 创建带前缀的UUID
             prefixed_uuid = f"{platform_prefix}{base_uuid[2:]}"
