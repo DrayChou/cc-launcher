@@ -33,7 +33,8 @@ class SessionMapper:
             "deepseek": "02",
             "kimi": "03",
             "glm": "04",
-            "siliconflow": "05"
+            "siliconflow": "05",
+            "vanchin": "06"
         }
 
         # 加载现有映射

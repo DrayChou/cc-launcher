@@ -82,13 +82,23 @@ except ImportError:
                         "api_key": "",
                         "model": "deepseek-chat",
                         "enabled": True
+                    },
+                    "vanchin": {
+                        "name": "Vanchin",
+                        "api_base_url": "https://vanchin.streamlake.ai/api/gateway/v1/endpoints/ep-xxx-xxx/claude-code-proxy",
+                        "auth_token": "",
+                        "model": "KAT-Coder",
+                        "small_model": "KAT-Coder",
+                        "enabled": True
                     }
                 },
                 "default_platform": "gaccode",
                 "aliases": {
                     "gc": "gaccode",
                     "dp": "deepseek",
-                    "ds": "deepseek"
+                    "ds": "deepseek",
+                    "vc": "vanchin",
+                    "vn": "vanchin"
                 }
             }
             return self._load_json_file(self.platforms_file, default_config)

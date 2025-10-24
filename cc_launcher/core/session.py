@@ -27,6 +27,7 @@ class SessionManager:
         "kimi": "03",
         "siliconflow": "04",
         "local_proxy": "05",
+        "vanchin": "06",
     }
 
     def __init__(self, config_manager):

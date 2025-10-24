@@ -7,6 +7,7 @@ Environment Manager - 环境管理器
 
 import os
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -165,10 +166,8 @@ class EnvironmentManager:
                 if git_path.exists():
                     possible_paths.append(git_path)
 
-        # 2. Scoop安装路径
-        scoop_git = Path.home() / "scoop" / "apps" / "git" / "current" / "bin" / "bash.exe"
-        if scoop_git.exists():
-            possible_paths.append(scoop_git)
+        # 2. 基于Git环境变量的路径检测
+        self._detect_git_from_env_vars(possible_paths)
 
         # 3. 常见安装位置
         common_paths = [
@@ -183,10 +182,10 @@ class EnvironmentManager:
         if user_install.exists():
             possible_paths.append(user_install)
 
-        # 5. 使用which命令查找
+        # 5. 使用which命令查找 - 优先级更高，移到前面
         git_bash = shutil.which("bash.exe")
         if git_bash:
-            possible_paths.append(Path(git_bash))
+            possible_paths.insert(0, Path(git_bash))  # 插入到最前面，优先使用PATH中的bash
 
         # 选择第一个可用的路径
         for git_path in possible_paths:
@@ -200,6 +199,69 @@ class EnvironmentManager:
 
         self.logger.debug("No Git Bash found")
         return None
+
+    def _detect_git_from_env_vars(self, possible_paths: list):
+        """基于Git环境变量检测Git安装路径"""
+        # Git相关的环境变量检测
+        git_env_detections = [
+            # 1. GIT_EXEC_PATH - Git核心程序路径（最可靠）
+            ("GIT_EXEC_PATH", "bin/bash.exe"),
+            # 2. GIT_INSTALL_ROOT - Git for Windows安装根目录
+            ("GIT_INSTALL_ROOT", "bin/bash.exe"),
+            # 3. Program Files中的Git（通过环境变量动态获取）
+            ("PROGRAMFILES", "Git/bin/bash.exe"),
+            ("PROGRAMFILES(X86)", "Git/bin/bash.exe"),
+            # 4. LOCALAPPDATA中的Git
+            ("LOCALAPPDATA", "Programs/Git/bin/bash.exe"),
+            # 5. 用户自定义Git路径
+            ("GIT_PATH", "bin/bash.exe"),
+            ("GIT_HOME", "bin/bash.exe"),
+            ("GIT_DIR", "../bin/bash.exe"),  # GIT_DIR通常指向.git目录，需要向上查找
+        ]
+
+        for env_var, relative_path in git_env_detections:
+            if env_var in os.environ:
+                git_base_path = Path(os.environ[env_var])
+                git_bash_path = git_base_path / relative_path
+
+                if git_bash_path.exists() and git_bash_path.is_file():
+                    possible_paths.append(git_bash_path)
+                    self.logger.debug(f"Found Git via {env_var}: {git_bash_path}")
+                    return  # 找到就停止
+
+        # 如果环境变量检测失败，尝试使用git命令查询
+        try:
+            # 使用git --exec-path查询Git安装路径
+            result = subprocess.run(
+                ["git", "--exec-path"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+            )
+
+            if result.returncode == 0 and result.stdout.strip():
+                git_exec_path = Path(result.stdout.strip())
+                git_bash_path = git_exec_path.parent / "bash.exe"
+
+                if git_bash_path.exists():
+                    possible_paths.append(git_bash_path)
+                    self.logger.debug(f"Found Git via git --exec-path: {git_bash_path}")
+                    return
+
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError, FileNotFoundError):
+            self.logger.debug("Git command not available for path detection")
+
+        # 检查PATH中是否有git.exe，然后推导bash路径
+        git_exe_path = shutil.which("git.exe")
+        if git_exe_path:
+            git_dir = Path(git_exe_path).parent
+            git_bash_path = git_dir / "bash.exe"
+
+            if git_bash_path.exists():
+                possible_paths.append(git_bash_path)
+                self.logger.debug(f"Found Git bash via git.exe in PATH: {git_bash_path}")
+                return
 
     def create_subprocess_env(self, platform_config: Dict[str, Any]) -> Dict[str, str]:
         """
