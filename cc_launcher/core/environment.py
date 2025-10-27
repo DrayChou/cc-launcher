@@ -142,8 +142,15 @@ class EnvironmentManager:
         if os.name == 'nt':
             git_bash_path = self._detect_git_bash_path()
             if git_bash_path:
+                # 设置用户所需的环境变量名
                 env_vars["CLAUDE_CODE_GIT_BASH_PATH"] = str(git_bash_path)
-                self.logger.debug(f"Set Git Bash path: {git_bash_path.name}")
+                # 也设置传统的Git相关环境变量作为兜底
+                env_vars["GIT_BASH_PATH"] = str(git_bash_path)
+                env_vars["GIT_BASH"] = str(git_bash_path)
+
+                self.logger.debug(f"Set Git Bash path: {git_bash_path}")
+                self.logger.debug(f"Git Bash full path: {git_bash_path}")
+                self.logger.info(f"Set CLAUDE_CODE_GIT_BASH_PATH={git_bash_path}")
 
         self.logger.info(f"Set {len(env_vars)} environment variables")
         return env_vars
