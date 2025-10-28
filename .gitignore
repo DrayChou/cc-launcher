@@ -143,3 +143,4 @@ status.json.backup
 # Test files
 test_*.py
 *_test.py
+*.pyc
