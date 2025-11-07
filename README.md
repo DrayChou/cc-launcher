@@ -51,10 +51,19 @@ cd cc-launcher
 
 2. **初始化配置**
 ```bash
-python launcher.py --init-config
+python3 launcher.py --init-config
 ```
 
-3. **配置API密钥**
+3. **Mac/Linux全局配置（推荐）**
+```bash
+# 一键设置全局命令
+echo "" >> ~/.zshrc && echo "# Claude Code Tools" >> ~/.zshrc && echo "export PATH=\"\$PATH:\$PWD\"" >> ~/.zshrc && echo "alias ccl=\"\$PWD/launcher.py\"" >> ~/.zshrc && source ~/.zshrc
+
+# 测试全局命令
+ccl --check-config
+```
+
+### 配置API密钥
 编辑 `~/.claude/config/platforms.json`，添加您的API密钥：
 ```json
 {
@@ -135,44 +144,98 @@ python launcher.py --init-config
 
 ```bash
 # 使用默认平台启动Claude Code
-python launcher.py
+python3 launcher.py
 
 # 使用指定平台启动
-python launcher.py deepseek
-python launcher.py kimi
-python launcher.py siliconflow
+python3 launcher.py deepseek
+python3 launcher.py kimi
+python3 launcher.py siliconflow
 
 # 使用别名启动（快速便捷）
-python launcher.py dp    # DeepSeek
-python launcher.py gc    # GAC Code
-python launcher.py sf    # SiliconFlow
-python launcher.py ds    # DeepSeek (另一个别名)
+python3 launcher.py dp    # DeepSeek
+python3 launcher.py gc    # GAC Code
+python3 launcher.py sf    # SiliconFlow
+python3 launcher.py ds    # DeepSeek (另一个别名)
 
 # 继续上次的会话
-python launcher.py --continue
-python launcher.py deepseek --continue
+python3 launcher.py --continue
+python3 launcher.py deepseek --continue
 
 # 简短形式
-python launcher.py -c
+python3 launcher.py -c
 ```
+
+### 🌍 Mac/Linux全局配置（推荐）
+
+配置全局命令，让你可以在任何地方启动Claude Code：
+
+1. **自动配置（一键设置）**
+   ```bash
+   # 添加到shell配置
+   echo "" >> ~/.zshrc
+   echo "# Claude Code Tools" >> ~/.zshrc
+   echo "export PATH=\"\$PATH:\$HOME/.claude\"" >> ~/.zshrc
+   echo "alias ccl=\"~/.claude/ccl\"" >> ~/.zshrc
+
+   # 重新加载配置
+   source ~/.zshrc
+   ```
+
+2. **使用全局命令**
+   ```bash
+   # 在任何目录下使用
+   ccl                    # 默认平台启动
+   ccl deepseek          # DeepSeek平台
+   ccl kimi              # Kimi平台
+   ccl gc                # GAC Code
+   ccl dp                # DeepSeek别名
+   ccl --continue        # 继续上次会话
+   ccl --list            # 查看所有平台
+   ```
+
+3. **平台别名速查**
+
+   | 别名 | 平台 | 命令示例 |
+   |------|------|----------|
+   | `gc`, `ga` | GAC Code | `ccl gc` |
+   | `dp`, `ds` | DeepSeek | `ccl dp` |
+   | `km` | Kimi | `ccl km` |
+   | `sc`, `sf` | SiliconFlow | `ccl sf` |
+   | `glm` | GLM | `ccl glm` |
+   | `kfc` | Kimi Coding | `ccl kfc` |
+
+4. **手动配置选项**
+
+   编辑 `~/.zshrc` 或 `~/.bashrc`，添加：
+   ```bash
+   # Claude Code Tools
+   export PATH="$PATH:$HOME/.claude"
+   alias ccl="$HOME/.claude/cc"
+   alias claude-code="$HOME/.claude/cc"
+   ```
 
 ### 管理命令
 
 ```bash
 # 显示帮助信息
-python launcher.py --help
+python3 launcher.py --help
 
 # 列出所有可用平台及其配置状态
-python launcher.py --list
+python3 launcher.py --list
 
 # 检查配置完整性和Claude Code安装
-python launcher.py --check-config
+python3 launcher.py --check-config
 
 # 初始化配置文件（首次使用）
-python launcher.py --init-config
+python3 launcher.py --init-config
 
 # 调试模式（显示详细日志）
-python launcher.py --debug deepseek
+python3 launcher.py --debug deepseek
+
+# 使用全局命令（如果已配置）
+ccl --help
+ccl --list
+ccl --check-config
 ```
 
 ## 🔄 启动流程详解
@@ -232,6 +295,25 @@ A: 配置文件分工说明：
 - `~/.claude/config/status.json` - 状态栏配置（仅cc-status使用）
 - `~/.claude/config/launcher.json` - 启动器配置（仅cc-launcher使用）
 
+**Q: Mac全局命令不工作？**
+A: 解决步骤：
+1. 检查配置是否加载：`which ccl`
+2. 验证PATH设置：`echo $PATH | grep claude`
+3. 手动重新加载：`source ~/.zshrc`
+4. 检查脚本权限：`ls -la ~/.claude/cc`
+5. 验证Python版本：`python3 --version`
+
+**Q: Linux/Mac权限问题？**
+A: 权限设置：
+```bash
+# 设置执行权限
+chmod +x ~/.claude/cc ~/.claude/claude-launcher
+
+# 确保配置目录可写
+chmod 755 ~/.claude
+chmod 644 ~/.claude/config/*.json
+```
+
 **Q: Windows系统兼容性问题？**
 A: Windows特别注意事项：
 1. 确保Python已添加到PATH环境变量
@@ -245,11 +327,36 @@ A: Windows特别注意事项：
 ```bash
 # 设置调试环境变量
 export CC_LAUNCHER_DEBUG=1
-python launcher.py deepseek
+python3 launcher.py deepseek
 
 # 或使用内置调试模式
-python launcher.py --debug --check-config
+python3 launcher.py --debug --check-config
+
+# 使用全局命令调试
+export CC_LAUNCHER_DEBUG=1
+ccl deepseek
 ```
+
+### Mac/Linux特别提示
+
+1. **Python版本要求**
+   ```bash
+   # 检查Python版本
+   python3 --version
+
+   # 安装Python3（Mac）
+   brew install python3
+   ```
+
+2. **全局命令验证**
+   ```bash
+   # 完整诊断流程
+   which ccl                    # 检查命令路径
+   echo $PATH | grep claude      # 检查PATH设置
+   ls -la ~/.claude/cc           # 检查文件权限
+   python3 --version            # 检查Python版本
+   ccl --check-config           # 测试配置
+   ```
 
 ## 🗂️ 项目架构
 
