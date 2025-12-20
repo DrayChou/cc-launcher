@@ -390,37 +390,31 @@ Examples:
             launch_cmd[0] = cmd_path
             printer.print(f"Using full path: {cmd_path}", Colors.GREEN)
 
-        # 关键修复：临时修改settings.json文件（模仿原始gaccode.com）
-        settings_backup_path = None
+        # 创建平台专用的settings配置文件
+        platform_settings_path = None
         try:
-            settings_backup_path = _modify_settings_json_temporarily(platform_config, printer)
+            platform_settings_path = _create_platform_settings_file(platform_name, platform_config, printer)
+            if platform_settings_path:
+                # 在启动命令中添加 --settings 参数
+                launch_cmd.append(f"--settings={platform_settings_path}")
+                printer.print(f"Using platform settings: {platform_settings_path}", Colors.CYAN)
         except Exception as e:
-            printer.print(f"Warning: Failed to modify settings.json: {e}", Colors.YELLOW)
+            printer.print(f"Warning: Failed to create platform settings file: {e}", Colors.YELLOW)
 
         try:
-            try:
-                process = subprocess.run(
-                    launch_cmd,
-                    env=launch_env,
-                    check=False,
-                    shell=(os.name == "nt")  # Windows需要shell=True
-                )
-                return process.returncode
-            except KeyboardInterrupt:
-                printer.print("\nInterrupted by user", Colors.YELLOW)
-                return 130
-            except FileNotFoundError:
-                printer.print(f"Command not found: {launch_cmd[0]}", Colors.RED)
-                return 1
-        finally:
-            # 恢复原始settings.json
-            if settings_backup_path and settings_backup_path.exists():
-                try:
-                    user_settings_path = Path.home() / ".claude" / "settings.json"
-                    shutil.move(settings_backup_path, user_settings_path)
-                    printer.print("Settings.json restored", Colors.GREEN)
-                except Exception as e:
-                    printer.print(f"Warning: Failed to restore settings.json: {e}", Colors.YELLOW)
+            process = subprocess.run(
+                launch_cmd,
+                env=launch_env,
+                check=False,
+                shell=(os.name == "nt")  # Windows需要shell=True
+            )
+            return process.returncode
+        except KeyboardInterrupt:
+            printer.print("\nInterrupted by user", Colors.YELLOW)
+            return 130
+        except FileNotFoundError:
+            printer.print(f"Command not found: {launch_cmd[0]}", Colors.RED)
+            return 1
 
     except KeyboardInterrupt:
         printer.print("\nInterrupted by user", Colors.YELLOW)
@@ -431,53 +425,130 @@ Examples:
         return 1
 
 
-def _modify_settings_json_temporarily(platform_config: dict, printer) -> Optional[Path]:
-    """临时修改settings.json文件，确保Claude Code读取正确的配置
+def _create_platform_settings_file(platform_name: str, platform_config: dict, printer) -> Optional[Path]:
+    """为指定平台创建专用的settings配置文件
+
+    从当前工作目录的settings.json复制并修改env配置，
+    生成settings.{platform}.json文件，避免污染全局配置
 
     Args:
+        platform_name: 平台名称（如 "glm", "gaccode"）
         platform_config: 平台配置
         printer: 颜色打印机
 
     Returns:
-        备份文件路径，如果settings.json不存在则返回None
+        平台专用配置文件的绝对路径，如果失败则返回None
     """
-    import shutil
     import json
 
-    user_settings_path = Path.home() / ".claude" / "settings.json"
-    backup_settings_path = Path.home() / ".claude" / "settings.json.backup"
+    # 当前工作目录的settings.json
+    cwd_settings_path = Path.cwd() / "settings.json"
 
-    if not user_settings_path.exists():
+    # 如果当前目录没有settings.json，尝试使用全局配置
+    if not cwd_settings_path.exists():
+        cwd_settings_path = Path.home() / ".claude" / "settings.json"
+
+    if not cwd_settings_path.exists():
+        printer.print(f"Warning: settings.json not found in {Path.cwd()} or {Path.home() / '.claude'}", Colors.YELLOW)
         return None
 
     try:
-        # 备份原始settings.json
-        shutil.copy2(user_settings_path, backup_settings_path)
-        printer.print("Backed up settings.json to settings.json.backup", Colors.GRAY)
+        # 生成平台专用配置文件名
+        platform_settings_path = Path.cwd() / f"settings.{platform_name}.json"
 
-        # 读取并修改settings.json
-        with open(user_settings_path, "r", encoding="utf-8") as f:
+        # 读取原始settings.json
+        with open(cwd_settings_path, "r", encoding="utf-8") as f:
             settings_data = json.load(f)
 
-        # 保存原始env配置用于调试
-        original_env = settings_data.get("env", {})
-        printer.print(f"Original env in settings.json: {list(original_env.keys())}", Colors.CYAN)
+        printer.print(f"Loaded settings from: {cwd_settings_path}", Colors.CYAN)
 
         # 创建新的环境变量配置
         env_config = _create_settings_env_config(platform_config)
-
-        # 设置正确的环境变量配置
         settings_data["env"] = env_config
 
-        # 写入修改后的settings.json
-        with open(user_settings_path, "w", encoding="utf-8") as f:
+        # 获取当前 Python 解释器的绝对路径（只计算一次）
+        python_executable = Path(sys.executable).absolute().as_posix()
+        printer.print(f"Using Python interpreter: {python_executable}", Colors.CYAN)
+
+        # 配置 hooks 和 statusLine
+        claude_dir = Path.home() / ".claude"
+
+        # 配置 notify hook
+        _configure_notify_hook(settings_data, claude_dir, python_executable, platform_name, printer)
+
+        # 配置 statusLine
+        _configure_status_line(settings_data, claude_dir, python_executable, platform_name, printer)
+
+        # 写入平台专用配置文件
+        with open(platform_settings_path, "w", encoding="utf-8") as f:
             json.dump(settings_data, f, indent=2, ensure_ascii=False)
 
-        printer.print("Updated env configuration in settings.json", Colors.GREEN)
-        return backup_settings_path
+        printer.print(f"Created platform settings: {platform_settings_path}", Colors.GREEN)
+        return platform_settings_path.absolute()
     except Exception as e:
-        printer.print(f"Warning: Failed to modify settings.json: {e}", Colors.RED)
+        printer.print(f"Warning: Failed to create platform settings file: {e}", Colors.RED)
         return None
+
+
+def _configure_notify_hook(settings_data: dict, claude_dir: Path, python_executable: str, platform_name: str, printer):
+    """配置 notify hook"""
+    notify_dir = claude_dir / "scripts" / "notify"
+    notify_script = notify_dir / "notify.py"
+
+    # is_dir() 和 is_file() 已经隐含了存在性检查
+    if notify_dir.is_dir() and notify_script.is_file():
+        notify_script_path = notify_script.absolute().as_posix()
+        notify_command = f"{python_executable} {notify_script_path} --platform={platform_name}"
+
+        # 使用 setdefault 简化结构初始化
+        settings_data.setdefault("hooks", {})
+        settings_data["hooks"].setdefault("Stop", [{"hooks": []}])
+
+        # 确保 Stop[0] 存在
+        if not settings_data["hooks"]["Stop"]:
+            settings_data["hooks"]["Stop"] = [{"hooks": []}]
+
+        settings_data["hooks"]["Stop"][0].setdefault("hooks", [])
+
+        # 设置或添加 notify hook
+        hook_entry = {"type": "command", "command": notify_command}
+        if settings_data["hooks"]["Stop"][0]["hooks"]:
+            settings_data["hooks"]["Stop"][0]["hooks"][0] = hook_entry
+        else:
+            settings_data["hooks"]["Stop"][0]["hooks"].append(hook_entry)
+
+        printer.print(f"Updated hooks.Stop with platform: {platform_name}", Colors.GREEN)
+    else:
+        _print_script_not_found_info(notify_dir, notify_script, "notify", "hooks", printer)
+
+
+def _configure_status_line(settings_data: dict, claude_dir: Path, python_executable: str, platform_name: str, printer):
+    """配置 statusLine"""
+    statusline_dir = claude_dir / "scripts" / "cc-status"
+    statusline_script = statusline_dir / "statusline.py"
+
+    # is_dir() 和 is_file() 已经隐含了存在性检查
+    if statusline_dir.is_dir() and statusline_script.is_file():
+        statusline_script_path = statusline_script.absolute().as_posix()
+        statusline_command = f"{python_executable} {statusline_script_path} --platform={platform_name}"
+
+        # 使用 setdefault 简化初始化
+        settings_data.setdefault("statusLine", {})
+        settings_data["statusLine"]["type"] = "command"
+        settings_data["statusLine"]["command"] = statusline_command
+        settings_data["statusLine"].setdefault("padding", 1)
+
+        printer.print(f"Updated statusLine with platform: {platform_name}", Colors.GREEN)
+    else:
+        _print_script_not_found_info(statusline_dir, statusline_script, "statusline", "statusLine", printer)
+
+
+def _print_script_not_found_info(script_dir: Path, script_file: Path, script_name: str, config_name: str, printer):
+    """打印脚本未找到的提示信息"""
+    if not script_dir.is_dir():
+        printer.print(f"Info: {script_name} directory not found at {script_dir}, skipping {config_name} configuration", Colors.GRAY)
+    elif not script_file.is_file():
+        printer.print(f"Info: {script_name}.py not found at {script_file}, skipping {config_name} configuration", Colors.GRAY)
 
 
 def _create_settings_env_config(platform_config: dict) -> dict:
