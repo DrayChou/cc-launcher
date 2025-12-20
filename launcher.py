@@ -453,8 +453,8 @@ def _create_platform_settings_file(platform_name: str, platform_config: dict, pr
         return None
 
     try:
-        # 生成平台专用配置文件名
-        platform_settings_path = Path.cwd() / f"settings.{platform_name}.json"
+        # 生成平台专用配置文件名 - 与settings.json放在同一目录
+        platform_settings_path = cwd_settings_path.parent / f"settings.{platform_name}.json"
 
         # 读取原始settings.json
         with open(cwd_settings_path, "r", encoding="utf-8") as f:
