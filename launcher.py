@@ -225,6 +225,7 @@ Examples:
   %(prog)s --continue         # Continue last session
   %(prog)s --list             # List available platforms
   %(prog)s --check-config     # Check configuration
+  %(prog)s glm --set-default  # Launch GLM and update base settings.json
         """
     )
 
@@ -263,6 +264,12 @@ Examples:
         "--check-updates",
         action="store_true",
         help="Check for Claude Code updates"
+    )
+    parser.add_argument(
+        "--set-default",
+        dest="set_default_env",
+        action="store_true",
+        help="Also update base settings.json env config to this platform"
     )
 
     args = parser.parse_args()
@@ -335,6 +342,10 @@ Examples:
         if not env_vars:
             printer.print("Failed to configure environment", Colors.RED)
             return 1
+
+        # 如果指定了 --set-default，则同时更新基础 settings.json 的 env 配置
+        if args.set_default_env:
+            _update_base_settings_env(platform_name, platform_config, printer)
 
         # 创建或获取会话
         printer.print("Managing session...", Colors.CYAN)
@@ -588,6 +599,49 @@ def _create_settings_env_config(platform_config: dict) -> dict:
         env_config["ANTHROPIC_SMALL_FAST_MODEL"] = platform_config.get("small_model", model)
 
     return env_config
+
+
+def _update_base_settings_env(platform_name: str, platform_config: dict, printer):
+    """更新基础 settings.json 的 env 配置为指定平台
+
+    Args:
+        platform_name: 平台名称（如 "glm", "gaccode"）
+        platform_config: 平台配置
+        printer: 颜色打印机
+    """
+    import json
+
+    # 查找基础 settings.json（优先当前目录，其次全局配置）
+    cwd_settings_path = Path.cwd() / "settings.json"
+    global_settings_path = Path.home() / ".claude" / "settings.json"
+
+    # 确定要修改的文件路径
+    base_settings_path = None
+    if cwd_settings_path.exists():
+        base_settings_path = cwd_settings_path
+    elif global_settings_path.exists():
+        base_settings_path = global_settings_path
+
+    if not base_settings_path:
+        printer.print("Warning: No base settings.json found to update", Colors.YELLOW)
+        return
+
+    try:
+        # 读取基础配置
+        with open(base_settings_path, "r", encoding="utf-8") as f:
+            settings_data = json.load(f)
+
+        # 更新 env 配置
+        env_config = _create_settings_env_config(platform_config)
+        settings_data["env"] = env_config
+
+        # 写回基础配置
+        with open(base_settings_path, "w", encoding="utf-8") as f:
+            json.dump(settings_data, f, indent=2, ensure_ascii=False)
+
+        printer.print(f"Updated base settings.json env: {base_settings_path}", Colors.GREEN)
+    except Exception as e:
+        printer.print(f"Warning: Failed to update base settings.json: {e}", Colors.YELLOW)
 
 
 if __name__ == "__main__":
