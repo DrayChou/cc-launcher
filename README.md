@@ -16,6 +16,12 @@
 - **环境配置** - 自动设置API密钥、端点和模型配置
 - **别名支持** - 支持简短别名快速启动（gc、dp、sf等）
 
+### 🔍 智能安装检测
+- **多方式检测** - 支持 Native Installer、Homebrew、WinGet、npm 检测
+- **优先级选择** - 自动优先选择 Native Installer（官方推荐）
+- **安装类型识别** - 智能识别 Claude Code 的安装方式
+- **更新建议** - 根据安装类型提供对应的更新指导
+
 ### 🆔 完整会话管理
 - **会话创建** - 为每个平台创建专用会话ID，避免会话冲突
 - **会话持久化** - 自动保存会话信息，支持会话恢复
@@ -40,6 +46,59 @@
 - Python 3.7+
 - Claude Code CLI
 - 至少一个支持平台的API密钥
+
+### Claude Code CLI 安装（推荐方式）
+
+**重要提示**：npm 安装方式已被官方标记为 deprecated，强烈推荐使用 Native Installer。
+
+#### Windows 安装
+
+**方式1：Native Installer（推荐，支持自动更新）**
+```powershell
+# PowerShell
+irm https://claude.ai/install.ps1 | iex
+```
+
+```cmd
+# CMD
+curl -fsSL https://claude.ai/install.cmd -o install.cmd && install.cmd && del install.cmd
+```
+
+**方式2：WinGet（需手动更新）**
+```powershell
+winget install Anthropic.ClaudeCode
+```
+
+#### macOS/Linux 安装
+
+**方式1：Native Installer（推荐，支持自动更新）**
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+**方式2：Homebrew（需手动更新）**
+```bash
+brew install --cask claude-code
+```
+
+#### 版本锁定选项
+
+```bash
+# 安装 stable 版本（约延迟一周，更稳定）
+curl -fsSL https://claude.ai/install.sh | bash -s stable
+
+# 安装指定版本
+curl -fsSL https://claude.ai/install.sh | bash -s 1.0.58
+```
+
+#### npm 方式（已弃用，不推荐）
+
+```bash
+# 仅作为备选方案
+npm install -g @anthropic-ai/claude-code
+```
+
+> **📌 注意**：Native Installer 会自动后台更新，无需手动干预。Homebrew 和 WinGet 安装需要定期手动更新。
 
 ### 快速安装
 
@@ -226,6 +285,9 @@ python3 launcher.py --list
 # 检查配置完整性和Claude Code安装
 python3 launcher.py --check-config
 
+# 检查 Claude Code 更新（根据安装类型提供对应建议）
+python3 launcher.py --check-updates
+
 # 初始化配置文件（首次使用）
 python3 launcher.py --init-config
 
@@ -236,9 +298,74 @@ python3 launcher.py --debug deepseek
 ccl --help
 ccl --list
 ccl --check-config
+ccl --check-updates
 ```
 
+### Claude Code 更新管理
+
+cc-launcher 支持智能检测您的 Claude Code 安装类型，并提供对应的更新建议：
+
+```bash
+# 检查更新（自动识别安装类型）
+python3 launcher.py --check-updates
+```
+
+**输出示例：**
+
+```
+Claude Code Update Check:
+[OK] Current version: 2.1.19 (Claude Code)
+[INFO] Installation type: native
+
+Update options:
+  [Auto] Native Installer 支持自动更新
+  手动更新: claude update
+  重新安装: curl -fsSL https://claude.ai/install.sh | bash
+```
+
+**不同安装类型的更新方式：**
+
+| 安装类型 | 自动更新 | 手动更新命令 |
+|----------|----------|--------------|
+| **Native Installer** | ✅ 是 | `claude update` |
+| **Homebrew** | ❌ 否 | `brew upgrade claude-code` |
+| **WinGet** | ❌ 否 | `winget upgrade Anthropic.ClaudeCode` |
+| **npm** | ❌ 否 | `npm update -g @anthropic-ai/claude-code` |
+
+> **💡 提示**：如果您使用的是 npm 安装，建议迁移到 Native Installer 以获得自动更新支持。
+
 ## 🔄 启动流程详解
+
+### 智能检测功能
+
+cc-launcher 内置智能检测器，能够自动识别不同方式安装的 Claude Code：
+
+**支持的安装类型检测：**
+
+| 安装方式 | 检测特征 | 优先级 |
+|----------|----------|--------|
+| **Native Installer** | `~/.local/bin/claude` | ⭐ 最高 |
+| **Homebrew** | `/usr/local/bin/claude`、`/opt/homebrew/bin/claude` | ⭐ 高 |
+| **WinGet** | `%LOCALAPPDATA%\Microsoft\WindowsApps\` | ⭐ 高 |
+| **npm (deprecated)** | `npx`、全局 npm 包 | ⭐ 低 |
+
+**检测逻辑：**
+
+1. **优先级1**：检查 Native Installer 路径
+2. **优先级2**：检查包管理器路径（Homebrew/WinGet）
+3. **优先级3**：检查 npm 相关命令（作为备选）
+
+**验证检测结果：**
+
+```bash
+# 查看检测到的 Claude Code 命令
+python3 launcher.py --check-config
+
+# 输出示例：
+# [OK] Claude Code detected: claude
+```
+
+### 启动流程
 
 cc-launcher 采用智能化的启动流程，确保最佳用户体验：
 
@@ -267,13 +394,45 @@ cc-launcher 采用智能化的启动流程，确保最佳用户体验：
 ### 常见问题解决
 
 **Q: 找不到Claude Code？**
-A: 解决步骤：
-1. 确保已安装Claude Code CLI：
+A: 解决步骤（按优先级）：
+
+1. **推荐：使用 Native Installer**
    ```bash
-   npm install -g @anthropic-ai/claude-code
+   # Windows PowerShell
+   irm https://claude.ai/install.ps1 | iex
+
+   # Windows CMD
+   curl -fsSL https://claude.ai/install.cmd -o install.cmd && install.cmd && del install.cmd
+
+   # macOS/Linux
+   curl -fsSL https://claude.ai/install.sh | bash
    ```
-2. 检查PATH环境变量是否包含npm全局包路径
-3. 尝试使用完整路径：`/usr/local/bin/claude` 或 `C:\Program Files\nodejs\claude.cmd`
+
+2. **备选：使用包管理器**
+   ```bash
+   # Windows
+   winget install Anthropic.ClaudeCode
+
+   # macOS/Linux
+   brew install --cask claude-code
+   ```
+
+3. **验证安装**
+   ```bash
+   # 检查版本
+   claude --version
+
+   # 测试启动
+   claude --help
+   ```
+
+4. **检查检测状态**
+   ```bash
+   # 使用启动器的检测功能
+   python3 launcher.py --check-config
+   ```
+
+> **⚠️ 注意**：npm 方式（`npm install -g @anthropic-ai/claude-code`）已被官方标记为 deprecated，建议迁移到 Native Installer。
 
 **Q: 平台配置错误？**
 A: 检查要点：
@@ -397,7 +556,9 @@ cc-launcher/
 
 ## 🚀 性能优化
 
-- **智能检测**: 缓存Claude Code安装位置，避免重复检测
+- **智能检测**: 按优先级检测 Claude Code 安装，优先选择 Native Installer
+- **安装类型识别**: 自动识别安装方式（Native/Homebrew/WinGet/npm）
+- **路径缓存**: 缓存 Claude Code 安装位置，避免重复检测
 - **并发启动**: 优化启动流程，减少启动延迟
 - **会话复用**: 支持会话恢复，避免重复创建
 - **配置缓存**: 缓存配置文件，减少I/O操作

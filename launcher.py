@@ -114,7 +114,13 @@ def check_config(config_manager: ConfigManager):
         printer.print(f"[OK] Claude Code detected: {' '.join(claude_cmd)}", Colors.GREEN)
     else:
         printer.print("[FAIL] Claude Code not found", Colors.RED)
-        printer.print("  Please install: npm install -g @anthropic-ai/claude-code", Colors.YELLOW)
+        printer.print("  Please install Claude Code:", Colors.YELLOW)
+        if os.name == 'nt':
+            printer.print("    PowerShell: irm https://claude.ai/install.ps1 | iex", Colors.GRAY)
+            printer.print("    WinGet: winget install Anthropic.ClaudeCode", Colors.GRAY)
+        else:
+            printer.print("    Native: curl -fsSL https://claude.ai/install.sh | bash", Colors.GRAY)
+            printer.print("    Homebrew: brew install --cask claude-code", Colors.GRAY)
 
     print()
 
@@ -133,7 +139,7 @@ def check_claude_updates(claude_detector: ClaudeDetector, printer: ColorPrinter)
         suggestions = claude_detector.suggest_installation_methods()
         printer.print("Installation suggestions:", Colors.YELLOW)
         for suggestion in suggestions:
-            printer.print(f"  * {suggestion}", Colors.GRAY)
+            printer.print(f"  {suggestion}", Colors.GRAY)
         return
 
     # 获取当前版本
@@ -143,71 +149,55 @@ def check_claude_updates(claude_detector: ClaudeDetector, printer: ColorPrinter)
     else:
         printer.print("[WARN] Could not determine current version", Colors.YELLOW)
 
-    # 检查更新 (仅对npm全局安装有效)
-    if claude_cmd[0] == "claude":
-        printer.print("Checking for updates via npm...", Colors.CYAN)
+    # 检测安装类型
+    install_type = claude_detector.detect_installation_type(claude_cmd)
+    printer.print(f"[INFO] Installation type: {install_type}", Colors.CYAN)
+
+    # 根据安装类型提供更新建议
+    printer.print("\nUpdate options:", Colors.CYAN)
+
+    if install_type == "native":
+        printer.print("  [Auto] Native Installer 支持自动更新", Colors.GREEN)
+        printer.print("  手动更新: claude update", Colors.GRAY)
+        printer.print("  重新安装: curl -fsSL https://claude.ai/install.sh | bash", Colors.GRAY)
+
+    elif install_type == "homebrew":
+        printer.print("  [Manual] Homebrew 需要手动更新", Colors.YELLOW)
+        printer.print("  更新命令: brew upgrade claude-code", Colors.GREEN)
+
+    elif install_type == "winget":
+        printer.print("  [Manual] WinGet 需要手动更新", Colors.YELLOW)
+        printer.print("  更新命令: winget upgrade Anthropic.ClaudeCode", Colors.GREEN)
+
+    elif install_type == "npm":
+        printer.print("  [Deprecated] npm 方式已弃用", Colors.YELLOW)
+        printer.print("  建议迁移到 Native Installer", Colors.YELLOW)
         try:
-            # 检查是否有更新
+            # 尝试检查 npm 更新
             result = subprocess.run(
                 ["npm", "outdated", "-g", "@anthropic-ai/claude-code"],
                 capture_output=True,
                 text=True,
                 timeout=15
             )
-
-            if result.returncode == 0:
-                # 没有输出表示没有更新
-                printer.print("[OK] Claude Code is up to date", Colors.GREEN)
-            elif "missing" in result.stdout or result.returncode != 0:
-                printer.print("[INFO] Update check completed", Colors.CYAN)
-                if result.stdout.strip():
-                    printer.print("Update info:", Colors.GRAY)
-                    for line in result.stdout.strip().split('\n'):
-                        if line.strip():
-                            printer.print(f"  {line}", Colors.GRAY)
+            if result.returncode == 0 and result.stdout.strip():
+                printer.print("  npm 更新: npm update -g @anthropic-ai/claude-code", Colors.GRAY)
             else:
-                printer.print("[INFO] Checking for latest version...", Colors.CYAN)
-                # 尝试获取最新版本信息
-                try:
-                    latest_result = subprocess.run(
-                        ["npm", "view", "@anthropic-ai/claude-code", "version"],
-                        capture_output=True,
-                        text=True,
-                        timeout=10
-                    )
-                    if latest_result.returncode == 0:
-                        latest_version = latest_result.stdout.strip()
-                        printer.print(f"Latest version: {latest_version}", Colors.CYAN)
-
-                        if current_version and latest_version != current_version:
-                            printer.print("[UPDATE] Update available!", Colors.YELLOW)
-                            printer.print("To update: npm update -g @anthropic-ai/claude-code", Colors.GREEN)
-                        else:
-                            printer.print("[OK] You have the latest version", Colors.GREEN)
-                    else:
-                        printer.print("[WARN] Could not fetch latest version info", Colors.YELLOW)
-                except Exception as e:
-                    printer.print(f"[WARN] Error checking latest version: {e}", Colors.YELLOW)
-
-        except subprocess.TimeoutExpired:
-            printer.print("[WARN] Update check timed out", Colors.YELLOW)
-        except FileNotFoundError:
-            printer.print("[WARN] npm not found, cannot check for updates", Colors.YELLOW)
-            printer.print("Install npm: https://www.npmjs.com/get-npm", Colors.CYAN)
+                printer.print("  [OK] npm 版本已是最新", Colors.GREEN)
         except Exception as e:
-            printer.print(f"[WARN] Error checking for updates: {e}", Colors.YELLOW)
+            printer.print(f"  [WARN] 无法检查 npm 更新: {e}", Colors.YELLOW)
 
     else:
-        # 非npm安装的Claude Code
-        printer.print("[INFO] Update checking is only available for npm-installed Claude Code", Colors.YELLOW)
-        printer.print("Current installation method:", Colors.GRAY)
-        printer.print(f"  {' '.join(claude_cmd)}", Colors.GRAY)
+        printer.print("  [Unknown] 未知的安装类型", Colors.YELLOW)
+        printer.print(f"  当前命令: {' '.join(claude_cmd)}", Colors.GRAY)
 
-    # 提供手动更新建议
-    printer.print("\nManual update options:", Colors.CYAN)
-    printer.print("  * npm update -g @anthropic-ai/claude-code", Colors.GRAY)
-    printer.print("  * npm install -g @anthropic-ai/claude-code@latest", Colors.GRAY)
-    printer.print("  * Download from: https://claude.ai/download", Colors.GRAY)
+    # 迁移建议
+    if install_type == "npm":
+        printer.print("\n[建议] 迁移到 Native Installer:", Colors.MAGENTA)
+        if os.name == 'nt':
+            printer.print("  PowerShell: irm https://claude.ai/install.ps1 | iex", Colors.GRAY)
+        else:
+            printer.print("  curl -fsSL https://claude.ai/install.sh | bash", Colors.GRAY)
 
     print()
 
@@ -370,7 +360,13 @@ Examples:
         claude_cmd = claude_detector.detect_claude_command()
         if not claude_cmd:
             printer.print("Claude Code not found. Please install:", Colors.RED)
-            printer.print("  npm install -g @anthropic-ai/claude-code", Colors.YELLOW)
+            if os.name == 'nt':
+                printer.print("  PowerShell: irm https://claude.ai/install.ps1 | iex", Colors.YELLOW)
+                printer.print("  WinGet: winget install Anthropic.ClaudeCode", Colors.GRAY)
+                printer.print("  CMD: curl -fsSL https://claude.ai/install.cmd -o install.cmd && install.cmd && del install.cmd", Colors.GRAY)
+            else:
+                printer.print("  Native: curl -fsSL https://claude.ai/install.sh | bash", Colors.YELLOW)
+                printer.print("  Homebrew: brew install --cask claude-code", Colors.GRAY)
             return 1
 
         # 准备启动命令
