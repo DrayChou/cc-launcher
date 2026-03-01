@@ -51,9 +51,15 @@ def print_header():
 
 
 def list_available_platforms(config_manager: ConfigManager):
-    """列出所有可用平台"""
+    """列出所有可用平台（含快捷别名）"""
     printer = ColorPrinter()
     platforms_config = config_manager.get_platforms_config()
+
+    # 构建反向别名映射：{platform_id: [alias1, alias2, ...]}
+    aliases: dict = platforms_config.get("aliases", {})
+    reverse_aliases: dict[str, list[str]] = {}
+    for alias, platform_id in aliases.items():
+        reverse_aliases.setdefault(platform_id, []).append(alias)
 
     printer.print("Available platforms:", Colors.CYAN, bold=True)
 
@@ -69,8 +75,14 @@ def list_available_platforms(config_manager: ConfigManager):
             status = "[OK]" if has_auth else "[FAIL]"
             status_color = Colors.GREEN if has_auth else Colors.RED
 
-            printer.print(f"  {status} {platform_id:<12} - {platform_config.get('name', 'Unknown')}",
-                         status_color)
+            # 拼接平台别名提示（如 "  » mm, minimax"）
+            platform_aliases = reverse_aliases.get(platform_id, [])
+            alias_hint = f"  » {', '.join(platform_aliases)}" if platform_aliases else ""
+
+            printer.print(
+                f"  {status} {platform_id:<12} - {platform_config.get('name', 'Unknown')}{alias_hint}",
+                status_color
+            )
 
             if has_auth:
                 printer.print(f"    Model: {platform_config.get('model', 'N/A')}", Colors.GRAY)
