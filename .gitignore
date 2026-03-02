@@ -144,3 +144,4 @@ status.json.backup
 test_*.py
 *_test.py
 *.pyc
+logs/cc-launcher.log.*
