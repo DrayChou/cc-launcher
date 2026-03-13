@@ -32,13 +32,17 @@ class ClaudeDetector:
         Returns:
             检测到的命令列表，如果未找到则返回None
         """
+        # 首先强制检查原生版本路径（避免PATH中npm版本优先导致误判）
+        native_path = self._get_native_claude_path()
+        if native_path:
+            self.logger.info(f"Found native Claude Code at: {native_path}")
+            return [native_path]
+
         # 按官方推荐优先级尝试不同的Claude Code启动方式
         claude_commands = [
             # === 优先级1: Native Installer (官方推荐，支持自动更新) ===
             # 1.1 直接的 claude 命令 (Native Installer 全局安装)
             ["claude"],
-            # 1.2 Native Installer 完整路径
-            self._get_full_path_command("claude"),
 
             # === 优先级2: 包管理器 ===
             # 2.1 Homebrew (macOS/Linux)
@@ -94,8 +98,52 @@ class ClaudeDetector:
         self.logger.warning("Claude Code not found")
         return None
 
+    def _get_native_claude_path(self) -> Optional[str]:
+        """获取原生 Claude Code 的完整路径（优先于 npm 版本）
+
+        检查原生安装器的标准路径，避免被 PATH 中的 npm 版本干扰。
+
+        Returns:
+            原生 claude 可执行文件的完整路径，如果未找到则返回 None
+        """
+        # Native Installer 标准路径（按优先级排序）
+        native_paths = [
+            # Unix-like 系统
+            os.path.expanduser("~/.local/bin/claude"),
+            # Windows 系统
+            os.path.expanduser("~\\.local\\bin\\claude.exe"),
+            # 系统级安装路径
+            "/usr/local/bin/claude",
+            "/usr/bin/claude",
+        ]
+
+        for path in native_paths:
+            if os.path.isfile(path) and os.access(path, os.X_OK):
+                # 验证确实是原生版本（不是 npm 包装器）
+                try:
+                    result = subprocess.run(
+                        [path, "--version"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    if result.returncode == 0:
+                        output = result.stdout.strip() or result.stderr.strip()
+                        # 原生版本输出格式: "2.1.74 (Claude Code)"
+                        if "claude" in output.lower():
+                            self.logger.debug(f"Verified native claude at {path}: {output}")
+                            return path
+                except (subprocess.TimeoutExpired, subprocess.SubprocessError, OSError):
+                    continue
+
+        return None
+
     def _get_full_path_command(self, command: str) -> Optional[List[str]]:
-        """获取命令的完整路径（优先选择 Native Installer）"""
+        """获取命令的完整路径
+
+        注意：原生 claude 路径优先级已在 _get_native_claude_path 中处理，
+        此方法主要用于其他命令或作为 fallback。
+        """
         try:
             if " " in command:
                 # 复合命令
@@ -104,33 +152,9 @@ class ClaudeDetector:
                 if full_path:
                     return [full_path] + command.split()[1:]
             else:
-                # 对于 claude 命令，优先选择 Native Installer 路径
-                if command in ["claude", "claude.exe"]:
-                    # 定义优先级路径（Native Installer 优先）
-                    priority_paths = []
-
-                    # Windows Native Installer 路径
-                    if os.name == "nt":
-                        priority_paths.append(os.path.expanduser("~\\.local\\bin\\claude.exe"))
-
-                    # Unix-like Native Installer 路径
-                    priority_paths.append(os.path.expanduser("~/.local/bin/claude"))
-
-                    # 检查优先级路径是否存在
-                    for path in priority_paths:
-                        if os.path.exists(path):
-                            self.logger.debug(f"Found priority path: {path}")
-                            return [path]
-
-                    # 如果优先路径都不存在，使用系统 PATH
-                    full_path = shutil.which(command)
-                    if full_path:
-                        return [full_path]
-                else:
-                    # 其他命令直接使用 which
-                    full_path = shutil.which(command)
-                    if full_path:
-                        return [full_path]
+                full_path = shutil.which(command)
+                if full_path:
+                    return [full_path]
 
         except Exception as e:
             self.logger.debug(f"Error finding full path for {command}: {e}")

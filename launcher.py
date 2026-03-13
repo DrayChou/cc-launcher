@@ -34,20 +34,31 @@ except ImportError as e:
     sys.exit(1)
 
 
-def print_header():
-    """打印启动器头部信息"""
+def print_header(claude_version: Optional[str] = None, debug: bool = False):
+    """打印启动器头部信息
+
+    Args:
+        claude_version: Claude Code 版本信息（如 "2.1.74"）
+        debug: 是否启用调试模式
+    """
     printer = ColorPrinter()
-    printer.print("Claude Code Multi-Platform Launcher v1.0", Colors.MAGENTA, bold=True)
-    printer.print("=" * 50, Colors.GRAY)
 
-    # 显示 launcher.py 的实际安装路径（仅在非标准位置时显示）
-    launcher_path = Path(__file__).parent
-    standard_path = Path.home() / ".claude" / "scripts" / "cc-launcher"
+    # 构建版本信息字符串
+    version_str = f"Claude {claude_version}" if claude_version else "v1.0"
+    printer.print(f"Claude Code Multi-Platform Launcher ({version_str})", Colors.MAGENTA, bold=True)
+    printer.print("━" * 40, Colors.GRAY)
 
-    if launcher_path != standard_path:
-        printer.print(f"Launcher location: {launcher_path}", Colors.GRAY)
+    # 仅在 debug 模式显示 launcher 路径
+    if debug:
+        launcher_path = Path(__file__).parent
+        standard_path = Path.home() / ".claude" / "scripts" / "cc-launcher"
+        if launcher_path != standard_path:
+            printer.print(f"Launcher location: {launcher_path}", Colors.GRAY)
 
-    print()
+
+def _short_uuid(uuid_str: str) -> str:
+    """缩短 UUID 显示（前8位）"""
+    return uuid_str.split('-')[0] if uuid_str else uuid_str
 
 
 def list_available_platforms(config_manager: ConfigManager):
@@ -322,8 +333,25 @@ Examples:
             check_claude_updates(claude_detector, printer)
             return 0
 
+        # 检测Claude命令（先获取以显示版本）
+        claude_cmd = claude_detector.detect_claude_command()
+        if not claude_cmd:
+            print_header(debug=args.debug)
+            printer.print("Claude Code not found. Please install:", Colors.RED)
+            if os.name == 'nt':
+                printer.print("  PowerShell: irm https://claude.ai/install.ps1 | iex", Colors.YELLOW)
+                printer.print("  WinGet: winget install Anthropic.ClaudeCode", Colors.GRAY)
+                printer.print("  CMD: curl -fsSL https://claude.ai/install.cmd -o install.cmd && install.cmd && del install.cmd", Colors.GRAY)
+            else:
+                printer.print("  Native: curl -fsSL https://claude.ai/install.sh | bash", Colors.YELLOW)
+                printer.print("  Homebrew: brew install --cask claude-code", Colors.GRAY)
+            return 1
+
+        # 获取Claude版本用于header
+        claude_version = claude_detector.get_claude_version(claude_cmd)
+
         # 正常启动流程
-        print_header()
+        print_header(claude_version=claude_version, debug=args.debug)
 
         # 检测可用平台
         platform_info = platform_detector.detect_platform(args.platform)
@@ -334,11 +362,12 @@ Examples:
             return 1
 
         platform_name, platform_config = platform_info
-        printer.print(f"Selected platform: {platform_config.get('name', platform_name)} ({platform_name})",
+        printer.print(f"Platform: {platform_config.get('name', platform_name)} ({platform_name})",
                      Colors.GREEN, bold=True)
 
         # 设置环境变量
-        printer.print("Configuring environment...", Colors.CYAN)
+        if args.debug:
+            printer.print("Configuring environment...", Colors.CYAN)
         env_vars = environment_manager.setup_environment(platform_config)
 
         if not env_vars:
@@ -350,7 +379,8 @@ Examples:
             _update_base_settings_env(platform_name, platform_config, printer)
 
         # 创建或获取会话
-        printer.print("Managing session...", Colors.CYAN)
+        if args.debug:
+            printer.print("Managing session...", Colors.CYAN)
         session_info = session_manager.create_or_get_session(
             platform_name,
             continue_session=args.continue_session
@@ -360,26 +390,11 @@ Examples:
             printer.print("Failed to create session", Colors.RED)
             return 1
 
-        # 显示会话信息
-        printer.print(f"Session ID: {session_info['session_id']}", Colors.GREEN)
-        printer.print(f"Platform: {platform_name}", Colors.GREEN)
-        if args.continue_session:
-            printer.print("Mode: Continue existing session", Colors.YELLOW)
-        else:
-            printer.print("Mode: New session", Colors.CYAN)
-
-        # 检测Claude命令
-        claude_cmd = claude_detector.detect_claude_command()
-        if not claude_cmd:
-            printer.print("Claude Code not found. Please install:", Colors.RED)
-            if os.name == 'nt':
-                printer.print("  PowerShell: irm https://claude.ai/install.ps1 | iex", Colors.YELLOW)
-                printer.print("  WinGet: winget install Anthropic.ClaudeCode", Colors.GRAY)
-                printer.print("  CMD: curl -fsSL https://claude.ai/install.cmd -o install.cmd && install.cmd && del install.cmd", Colors.GRAY)
-            else:
-                printer.print("  Native: curl -fsSL https://claude.ai/install.sh | bash", Colors.YELLOW)
-                printer.print("  Homebrew: brew install --cask claude-code", Colors.GRAY)
-            return 1
+        # 显示会话信息（简化）
+        mode_str = "Continue" if args.continue_session else "New session"
+        mode_color = Colors.YELLOW if args.continue_session else Colors.CYAN
+        printer.print(f"Mode:     {mode_str}", mode_color)
+        printer.print(f"Session:  {_short_uuid(session_info['session_id'])}", Colors.GRAY)
 
         # 准备启动命令
         launch_cmd = claude_cmd.copy()
@@ -389,9 +404,11 @@ Examples:
             launch_cmd.append(f"--session-id={session_info['session_id']}")
 
         # 启动Claude Code
+        printer.print("━" * 40, Colors.GRAY)
         printer.print("Launching Claude Code...", Colors.MAGENTA, bold=True)
-        printer.print(f"Command: {' '.join(launch_cmd)}", Colors.GRAY)
-        print("=" * 50)
+
+        if args.debug:
+            printer.print(f"Command: {' '.join(launch_cmd)}", Colors.GRAY)
 
         # 启动Claude Code进程
         import os
@@ -407,16 +424,21 @@ Examples:
         cmd_path = shutil.which(launch_cmd[0])
         if cmd_path:
             launch_cmd[0] = cmd_path
-            printer.print(f"Using full path: {cmd_path}", Colors.GREEN)
+            if args.debug:
+                printer.print(f"Using full path: {cmd_path}", Colors.GREEN)
 
         # 创建平台专用的settings配置文件
         platform_settings_path = None
         try:
-            platform_settings_path = _create_platform_settings_file(platform_name, platform_config, printer)
+            # 传递 debug 标志控制详细输出
+            platform_settings_path = _create_platform_settings_file(
+                platform_name, platform_config, printer, args.debug
+            )
             if platform_settings_path:
                 # 在启动命令中添加 --settings 参数
                 launch_cmd.append(f"--settings={platform_settings_path}")
-                printer.print(f"Using platform settings: {platform_settings_path}", Colors.CYAN)
+                if args.debug:
+                    printer.print(f"Using platform settings: {platform_settings_path}", Colors.CYAN)
         except Exception as e:
             printer.print(f"Warning: Failed to create platform settings file: {e}", Colors.YELLOW)
 
@@ -444,7 +466,9 @@ Examples:
         return 1
 
 
-def _create_platform_settings_file(platform_name: str, platform_config: dict, printer) -> Optional[Path]:
+def _create_platform_settings_file(
+    platform_name: str, platform_config: dict, printer, debug: bool = False
+) -> Optional[Path]:
     """为指定平台创建专用的settings配置文件
 
     从当前工作目录的settings.json复制并修改env配置，
@@ -454,6 +478,7 @@ def _create_platform_settings_file(platform_name: str, platform_config: dict, pr
         platform_name: 平台名称（如 "glm", "gaccode"）
         platform_config: 平台配置
         printer: 颜色打印机
+        debug: 是否启用调试模式显示详细信息
 
     Returns:
         平台专用配置文件的绝对路径，如果失败则返回None
@@ -468,7 +493,8 @@ def _create_platform_settings_file(platform_name: str, platform_config: dict, pr
         cwd_settings_path = Path.home() / ".claude" / "settings.json"
 
     if not cwd_settings_path.exists():
-        printer.print(f"Warning: settings.json not found in {Path.cwd()} or {Path.home() / '.claude'}", Colors.YELLOW)
+        if debug:
+            printer.print(f"Warning: settings.json not found in {Path.cwd()} or {Path.home() / '.claude'}", Colors.YELLOW)
         return None
 
     try:
@@ -479,7 +505,8 @@ def _create_platform_settings_file(platform_name: str, platform_config: dict, pr
         with open(cwd_settings_path, "r", encoding="utf-8") as f:
             settings_data = json.load(f)
 
-        printer.print(f"Loaded settings from: {cwd_settings_path}", Colors.CYAN)
+        if debug:
+            printer.print(f"Loaded settings from: {cwd_settings_path}", Colors.CYAN)
 
         # 创建新的环境变量配置
         env_config = _create_settings_env_config(platform_config)
@@ -487,29 +514,42 @@ def _create_platform_settings_file(platform_name: str, platform_config: dict, pr
 
         # 获取当前 Python 解释器的绝对路径（只计算一次）
         python_executable = Path(sys.executable).absolute().as_posix()
-        printer.print(f"Using Python interpreter: {python_executable}", Colors.CYAN)
+        if debug:
+            printer.print(f"Using Python interpreter: {python_executable}", Colors.CYAN)
 
         # 配置 hooks 和 statusLine
         claude_dir = Path.home() / ".claude"
 
         # 配置 notify hook
-        _configure_notify_hook(settings_data, claude_dir, python_executable, platform_name, printer)
+        _configure_notify_hook(
+            settings_data, claude_dir, python_executable, platform_name, printer, debug
+        )
 
         # 配置 statusLine
-        _configure_status_line(settings_data, claude_dir, python_executable, platform_name, printer)
+        _configure_status_line(
+            settings_data, claude_dir, python_executable, platform_name, printer, debug
+        )
 
         # 写入平台专用配置文件
         with open(platform_settings_path, "w", encoding="utf-8") as f:
             json.dump(settings_data, f, indent=2, ensure_ascii=False)
 
-        printer.print(f"Created platform settings: {platform_settings_path}", Colors.GREEN)
+        if debug:
+            printer.print(f"Created platform settings: {platform_settings_path}", Colors.GREEN)
         return platform_settings_path.absolute()
     except Exception as e:
-        printer.print(f"Warning: Failed to create platform settings file: {e}", Colors.RED)
+        printer.print(f"Warning: Failed to create platform settings file: {e}", Colors.YELLOW)
         return None
 
 
-def _configure_notify_hook(settings_data: dict, claude_dir: Path, python_executable: str, platform_name: str, printer):
+def _configure_notify_hook(
+    settings_data: dict,
+    claude_dir: Path,
+    python_executable: str,
+    platform_name: str,
+    printer,
+    debug: bool = False,
+):
     """配置 notify hook"""
     notify_dir = claude_dir / "scripts" / "notify"
     notify_script = notify_dir / "notify.py"
@@ -536,12 +576,22 @@ def _configure_notify_hook(settings_data: dict, claude_dir: Path, python_executa
         else:
             settings_data["hooks"]["Stop"][0]["hooks"].append(hook_entry)
 
-        printer.print(f"Updated hooks.Stop with platform: {platform_name}", Colors.GREEN)
-    else:
-        _print_script_not_found_info(notify_dir, notify_script, "notify", "hooks", printer)
+        if debug:
+            printer.print(f"Updated hooks.Stop with platform: {platform_name}", Colors.GREEN)
+    elif debug:
+        _print_script_not_found_info(
+            notify_dir, notify_script, "notify", "hooks", printer
+        )
 
 
-def _configure_status_line(settings_data: dict, claude_dir: Path, python_executable: str, platform_name: str, printer):
+def _configure_status_line(
+    settings_data: dict,
+    claude_dir: Path,
+    python_executable: str,
+    platform_name: str,
+    printer,
+    debug: bool = False,
+):
     """配置 statusLine"""
     statusline_dir = claude_dir / "scripts" / "cc-status"
     statusline_script = statusline_dir / "statusline.py"
@@ -557,9 +607,12 @@ def _configure_status_line(settings_data: dict, claude_dir: Path, python_executa
         settings_data["statusLine"]["command"] = statusline_command
         settings_data["statusLine"].setdefault("padding", 1)
 
-        printer.print(f"Updated statusLine with platform: {platform_name}", Colors.GREEN)
-    else:
-        _print_script_not_found_info(statusline_dir, statusline_script, "statusline", "statusLine", printer)
+        if debug:
+            printer.print(f"Updated statusLine with platform: {platform_name}", Colors.GREEN)
+    elif debug:
+        _print_script_not_found_info(
+            statusline_dir, statusline_script, "statusline", "statusLine", printer
+        )
 
 
 def _print_script_not_found_info(script_dir: Path, script_file: Path, script_name: str, config_name: str, printer):
