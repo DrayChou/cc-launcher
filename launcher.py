@@ -593,6 +593,25 @@ def _configure_status_line(
     debug: bool = False,
 ):
     """配置 statusLine"""
+    # 优先使用 TypeScript 版本
+    statusline_ts_dir = claude_dir / "scripts" / "cc-status-ts"
+    statusline_ts_script = statusline_ts_dir / "dist" / "index.js"
+
+    if statusline_ts_dir.is_dir() and statusline_ts_script.is_file():
+        statusline_script_path = statusline_ts_script.absolute().as_posix()
+        statusline_command = f"node {statusline_script_path}"
+
+        # 使用 setdefault 简化初始化
+        settings_data.setdefault("statusLine", {})
+        settings_data["statusLine"]["type"] = "command"
+        settings_data["statusLine"]["command"] = statusline_command
+        settings_data["statusLine"].setdefault("padding", 1)
+
+        if debug:
+            printer.print(f"Updated statusLine with TypeScript plugin: {platform_name}", Colors.GREEN)
+        return
+
+    # 回退到 Python 版本
     statusline_dir = claude_dir / "scripts" / "cc-status"
     statusline_script = statusline_dir / "statusline.py"
 
@@ -608,7 +627,7 @@ def _configure_status_line(
         settings_data["statusLine"].setdefault("padding", 1)
 
         if debug:
-            printer.print(f"Updated statusLine with platform: {platform_name}", Colors.GREEN)
+            printer.print(f"Updated statusLine with Python (fallback): {platform_name}", Colors.GREEN)
     elif debug:
         _print_script_not_found_info(
             statusline_dir, statusline_script, "statusline", "statusLine", printer
