@@ -9,7 +9,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from ..utils.logger import get_logger
 
@@ -139,7 +139,7 @@ class EnvironmentManager:
             self.logger.debug("Set max output tokens")
 
         # 检测并设置Git Bash路径（Windows）
-        if os.name == 'nt':
+        if os.name == "nt":
             git_bash_path = self._detect_git_bash_path()
             if git_bash_path:
                 # 设置用户所需的环境变量名
@@ -151,6 +151,11 @@ class EnvironmentManager:
                 self.logger.debug(f"Set Git Bash path: {git_bash_path}")
                 self.logger.debug(f"Git Bash full path: {git_bash_path}")
                 self.logger.info(f"Set CLAUDE_CODE_GIT_BASH_PATH={git_bash_path}")
+
+        # 设置CLAUDE_CODE_ATTRIBUTION_HEADER（默认0）
+        if "CLAUDE_CODE_ATTRIBUTION_HEADER" not in os.environ:
+            env_vars["CLAUDE_CODE_ATTRIBUTION_HEADER"] = "0"
+            self.logger.info("Set CLAUDE_CODE_ATTRIBUTION_HEADER=0 (default)")
 
         self.logger.info(f"Set {len(env_vars)} environment variables")
         return env_vars
@@ -164,7 +169,9 @@ class EnvironmentManager:
             git_bash_path = Path(os.environ["CLAUDE_CODE_GIT_BASH_PATH"])
             if git_bash_path.exists():
                 possible_paths.append(git_bash_path)
-                self.logger.debug(f"Found Git Bash via CLAUDE_CODE_GIT_BASH_PATH: {git_bash_path}")
+                self.logger.debug(
+                    f"Found Git Bash via CLAUDE_CODE_GIT_BASH_PATH: {git_bash_path}"
+                )
 
         # 2. Git环境变量检测（合并逻辑）
         git_env_detections = [
@@ -191,7 +198,9 @@ class EnvironmentManager:
                     self.logger.debug(f"Found Git via {env_var}: {git_bash_path}")
 
         # 3. Scoop安装路径
-        scoop_git = Path.home() / "scoop" / "apps" / "git" / "current" / "bin" / "bash.exe"
+        scoop_git = (
+            Path.home() / "scoop" / "apps" / "git" / "current" / "bin" / "bash.exe"
+        )
         if scoop_git.exists():
             possible_paths.append(scoop_git)
             self.logger.debug(f"Found Git via Scoop: {scoop_git}")
@@ -238,7 +247,9 @@ class EnvironmentManager:
                 potential_bash = bin_dir / "bash.exe"
                 if potential_bash.exists():
                     possible_paths.append(potential_bash)
-                    self.logger.debug(f"Found Git Bash via parent bin: {potential_bash}")
+                    self.logger.debug(
+                        f"Found Git Bash via parent bin: {potential_bash}"
+                    )
 
         # 6. Git命令查询（最后的尝试）
         try:
@@ -247,7 +258,7 @@ class EnvironmentManager:
                 capture_output=True,
                 text=True,
                 timeout=5,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             )
 
             if result.returncode == 0 and result.stdout.strip():
@@ -256,7 +267,11 @@ class EnvironmentManager:
                 if git_bash_path.exists():
                     possible_paths.append(git_bash_path)
                     self.logger.debug(f"Found Git via git --exec-path: {git_bash_path}")
-        except (subprocess.TimeoutExpired, subprocess.SubprocessError, FileNotFoundError):
+        except (
+            subprocess.TimeoutExpired,
+            subprocess.SubprocessError,
+            FileNotFoundError,
+        ):
             pass
 
         # 选择第一个可用的路径（按优先级顺序）
@@ -271,7 +286,6 @@ class EnvironmentManager:
         self.logger.debug("No Git Bash found")
         return None
 
-    
     def create_subprocess_env(self, platform_config: Dict[str, Any]) -> Dict[str, str]:
         """
         为子进程创建环境变量字典
@@ -289,7 +303,9 @@ class EnvironmentManager:
         platform_env = self._setup_new_env_vars(platform_config)
         process_env.update(platform_env)
 
-        self.logger.debug(f"Created subprocess environment with {len(platform_env)} variables")
+        self.logger.debug(
+            f"Created subprocess environment with {len(platform_env)} variables"
+        )
         return process_env
 
     def validate_environment(self, platform_config: Dict[str, Any]) -> bool:
@@ -304,11 +320,13 @@ class EnvironmentManager:
         """
         try:
             # 检查认证信息
-            has_auth = any([
-                platform_config.get("api_key"),
-                platform_config.get("auth_token"),
-                platform_config.get("login_token")
-            ])
+            has_auth = any(
+                [
+                    platform_config.get("api_key"),
+                    platform_config.get("auth_token"),
+                    platform_config.get("login_token"),
+                ]
+            )
 
             if not has_auth:
                 self.logger.warning("No authentication information found")
